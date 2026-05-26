@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
                             val matchIndex by viewModel.currentSearchMatchIndex.collectAsStateWithLifecycle()
                             val editStartLineIndex by viewModel.editStartLineIndex.collectAsStateWithLifecycle()
                             val editEndLineIndex by viewModel.editEndLineIndex.collectAsStateWithLifecycle()
+                            val outlineSymbols by viewModel.outlineSymbols.collectAsStateWithLifecycle()
 
                             ReaderScreen(
                                 theme = theme,
@@ -94,6 +95,7 @@ class MainActivity : ComponentActivity() {
                                 searchResults = searchResults,
                                 currentSearchMatchIndex = matchIndex,
                                 scrollRequest = viewModel.scrollRequest,
+                                outlineSymbols = outlineSymbols,
                                 onUpdateSettings = { viewModel.updateSettings(it) },
                                 onToggleEditMode = { viewModel.toggleEditMode(it) },
                                 onNavigateEditWindow = { viewModel.navigateEditWindow(it) },

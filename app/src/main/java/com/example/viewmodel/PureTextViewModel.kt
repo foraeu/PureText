@@ -11,6 +11,8 @@ import com.example.model.RecentFile
 import com.example.model.UserSettings
 import com.example.utils.EpubParser
 import com.example.utils.FileUtils
+import com.example.utils.OutlineParser
+import com.example.utils.OutlineSymbol
 import com.example.utils.SyntaxHighlighter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -42,8 +44,13 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
     private val context = application.applicationContext
     private val repository: PureTextRepository
 
-    // Settings State
-    val userSettings: StateFlow<UserSettings>
+    // Settings State with in-memory Flow + debounced DB write
+    private val _userSettings = MutableStateFlow(UserSettings())
+    val userSettings: StateFlow<UserSettings> = _userSettings.asStateFlow()
+
+    // Outline Symbols State
+    private val _outlineSymbols = MutableStateFlow<List<OutlineSymbol>>(emptyList())
+    val outlineSymbols: StateFlow<List<OutlineSymbol>> = _outlineSymbols.asStateFlow()
     
     // Recent Files State
     val recentFiles: StateFlow<List<RecentFile>>
@@ -98,14 +105,23 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
         recentFiles = repository.recentFiles
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        userSettings = repository.userSettings
-            .map { it ?: UserSettings() }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserSettings())
-
-        // Initialize user config row if database is empty on first boot.
+        // Initialize user config and collect DB settings
         viewModelScope.launch {
             repository.getUserSettingsSync()
+            repository.userSettings.collect { dbSettings ->
+                if (dbSettings != null && _userSettings.value != dbSettings) {
+                    _userSettings.value = dbSettings
+                }
+            }
         }
+
+        // Debounce database write operations for settings (optimizes pinch-to-zoom)
+        _userSettings
+            .debounce(500L)
+            .onEach { settings ->
+                repository.saveUserSettings(settings)
+            }
+            .launchIn(viewModelScope)
 
         // Asynchronous debounced search observer
         combine(
@@ -191,6 +207,7 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                                 )
                             }
                             _editableText.value = epubLines.take(1000).joinToString("\n")
+                            _outlineSymbols.value = OutlineParser.parseSymbols(epubLines, language)
                         }
                     } else {
                         val charset = FileUtils.determineCharset(context, uri, activeSettings.defaultEncoding)
@@ -239,6 +256,13 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                                         it.copy(lines = it.lines + chunk)
                                     }
                                 }
+                            }
+
+                            // Parse symbols after full file is loaded in memory
+                            val finalLines = _readerState.value.lines
+                            val symbols = OutlineParser.parseSymbols(finalLines, language)
+                            withContext(Dispatchers.Main) {
+                                _outlineSymbols.value = symbols
                             }
                         }
                     }
@@ -391,6 +415,10 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                         scrollOffset = 0
                     )
                 )
+
+                // Re-parse outline symbols after saving edits
+                val symbols = OutlineParser.parseSymbols(_readerState.value.lines, _readerState.value.language)
+                _outlineSymbols.value = symbols
             } else {
                 _readerState.update {
                     it.copy(
@@ -412,13 +440,14 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
     // Preferences Modification
     fun updateSettings(reducer: (UserSettings) -> UserSettings) {
-        viewModelScope.launch {
-            val updated = reducer(userSettings.value)
-            repository.saveUserSettings(updated)
+        val oldSettings = _userSettings.value
+        val updated = reducer(oldSettings)
+        _userSettings.value = updated
 
-            // Re-read with fallback encoding if encoding name changed
-            val uriStr = _readerState.value.uriString
-            if (uriStr != null && updated.defaultEncoding != userSettings.value.defaultEncoding) {
+        // Re-read with fallback encoding if encoding name changed
+        val uriStr = _readerState.value.uriString
+        if (uriStr != null && updated.defaultEncoding != oldSettings.defaultEncoding) {
+            viewModelScope.launch {
                 openFile(Uri.parse(uriStr))
             }
         }

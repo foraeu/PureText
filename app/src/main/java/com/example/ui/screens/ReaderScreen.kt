@@ -42,6 +42,11 @@ import com.example.viewmodel.ReaderState
 import com.example.viewmodel.SearchResult
 import com.example.utils.HighlightTheme
 import com.example.utils.SyntaxHighlighter
+import com.example.utils.OutlineSymbol
+import com.example.utils.SymbolType
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
@@ -77,6 +82,7 @@ fun ReaderScreen(
     onUpdateScrollCoordinates: (index: Int, offset: Int) -> Unit,
     onNavigateBack: () -> Unit,
     onOpenFile: (Uri) -> Unit = {},
+    outlineSymbols: List<OutlineSymbol> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -132,8 +138,81 @@ fun ReaderScreen(
         }
     }
 
-    Scaffold(
-        modifier = modifier,
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = theme.surface,
+                modifier = Modifier.width(300.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = if (readerState.language == "markdown") "文档大纲" else "代码符号大纲",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = theme.textPrimary
+                        ),
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+
+                    if (outlineSymbols.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("未检测到大纲结构", color = theme.textPrimary.copy(alpha = 0.4f), fontSize = 13.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            items(outlineSymbols) { symbol ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            coroutineScope.launch {
+                                                drawerState.close()
+                                                lazyListState.animateScrollToItem(symbol.lineIndex)
+                                            }
+                                        }
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val icon = when (symbol.type) {
+                                        SymbolType.CLASS -> "🅒"
+                                        SymbolType.FUNCTION -> "🅵"
+                                        SymbolType.HEADER -> "📌"
+                                    }
+                                    Text(
+                                        text = icon,
+                                        color = theme.accent,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = symbol.label,
+                                        color = theme.textPrimary,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ) {
+        Scaffold(
+            modifier = modifier,
         topBar = {
             AnimatedVisibility(
                 visible = showUIBars,
@@ -175,6 +254,21 @@ fun ReaderScreen(
                         }
                     },
                     actions = {
+                        // Outline Button
+                        if (outlineSymbols.isNotEmpty()) {
+                            IconButton(onClick = {
+                                coroutineScope.launch {
+                                    drawerState.open()
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Toc,
+                                    contentDescription = "Outline List",
+                                    tint = theme.textPrimary
+                                )
+                            }
+                        }
+
                         // Search Button
                         IconButton(onClick = {
                             showSearchPanel = !showSearchPanel
@@ -513,6 +607,13 @@ fun ReaderScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(theme.background)
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, _, zoom, _ ->
+                                    if (zoom != 1f) {
+                                        onUpdateSettings { it.copy(fontSize = (it.fontSize * zoom).coerceIn(12f, 30f)) }
+                                    }
+                                }
+                            }
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
@@ -1024,6 +1125,7 @@ fun ReaderScreen(
                     containerColor = theme.surface
                 )
             }
+        }
         }
     }
 }
