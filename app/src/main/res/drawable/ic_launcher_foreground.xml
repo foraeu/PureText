@@ -1,0 +1,50 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Styled document backing shadow -->
+    <path
+        android:fillColor="#15171C"
+        android:pathData="M34,26.5 C34,25.1 35.1,24 36.5,24 L62,24 C62.5,24 63,24.2 63.4,24.6 L73.4,34.6 C73.8,35 74,35.5 74,36 L74,81.5 C74,82.9 72.9,84 71.5,84 L36.5,84 C35.1,84 34,82.9 34,81.5 Z" />
+    <!-- Styled document boarder/surface -->
+    <path
+        android:fillColor="#818CF8"
+        android:pathData="M36,22 C36,20.9 36.9,20 38,20 L62,20 L76,34 L76,78 C76,79.1 75.1,80 74,80 L38,80 C36.9,80 36,79.1 36,78 Z" />
+    <!-- Inner page sheet -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,23 C39,22.4 39.4,22 40,22 L61,22 L73,34 L73,75 C73,75.6 72.6,76 72,76 L40,76 C39.4,76 39,75.6 39,75 Z" />
+    <!-- Code bracket syntax stylized icon overlay -->
+    <!-- '<' bracket -->
+    <path
+        android:strokeColor="#818CF8"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M50,40 L44,45 L50,50" />
+    <!-- '>' bracket -->
+    <path
+        android:strokeColor="#818CF8"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M56,40 L62,45 L56,50" />
+    <!-- '/' slash divider -->
+    <path
+        android:strokeColor="#818CF8"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M54,38 L48,52" />
+    <!-- Standard text code placeholder bars -->
+    <path
+        android:strokeColor="#A5B4FC"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M44,58 L62,58" />
+    <path
+        android:strokeColor="#A5B4FC"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M44,64 L56,64" />
+</vector>

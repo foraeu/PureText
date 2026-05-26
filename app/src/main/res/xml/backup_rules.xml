@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="database" path="puretext_database"/>
+    <exclude domain="database" path="puretext_database-shm"/>
+    <exclude domain="database" path="puretext_database-wal"/>
+</full-backup-content>

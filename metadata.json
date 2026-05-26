@@ -1,0 +1,6 @@
+{
+  "name": "PureText",
+  "description": "An ultra-lightweight, customizable text and source code viewer optimized for superb reading comfort and high-performance offline rendering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
