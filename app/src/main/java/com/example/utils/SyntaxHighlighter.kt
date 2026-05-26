@@ -107,6 +107,7 @@ object SyntaxHighlighter {
             "xml", "html", "xhtml" -> "markup"
             "sh", "bash", "zsh" -> "bash"
             "css" -> "css"
+            "epub" -> "epub"
             else -> "text"
         }
     }

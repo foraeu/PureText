@@ -433,7 +433,7 @@ fun RecentFileItem(
                     imageVector = when (recentFile.language.lowercase()) {
                         "python", "rust", "typescript", "javascript", "kotlin", "java" -> Icons.Default.Code
                         "json" -> Icons.Default.DataObject
-                        "markdown" -> Icons.Default.MenuBook
+                        "markdown", "epub" -> Icons.Default.MenuBook
                         else -> Icons.Default.Description
                     },
                     contentDescription = null,

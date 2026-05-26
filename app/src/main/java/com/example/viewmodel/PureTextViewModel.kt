@@ -9,6 +9,7 @@ import com.example.data.PureTextDatabase
 import com.example.data.PureTextRepository
 import com.example.model.RecentFile
 import com.example.model.UserSettings
+import com.example.utils.EpubParser
 import com.example.utils.FileUtils
 import com.example.utils.SyntaxHighlighter
 import kotlinx.coroutines.Dispatchers
@@ -180,50 +181,63 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
                 // Stream load the file in an asynchronous IO task
                 withContext(Dispatchers.IO) {
-                    val charset = FileUtils.determineCharset(context, uri, activeSettings.defaultEncoding)
-                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                        val reader = inputStream.bufferedReader(charset)
-                        val initialLines = mutableListOf<String>()
-                        
-                        // First chunk: instantly load up to 1000 lines
-                        for (i in 0 until 1000) {
-                            val line = reader.readLine() ?: break
-                            initialLines.add(line)
-                        }
-
-                        // Send first chunk to UI instantly (so loading overlay goes away immediately)
+                    if (language == "epub") {
+                        val epubLines = EpubParser.parseEpubToLines(context, uri)
                         withContext(Dispatchers.Main) {
                             _readerState.update {
                                 it.copy(
                                     isLoading = false,
-                                    lines = initialLines.toList()
+                                    lines = epubLines
                                 )
                             }
-                            _editableText.value = initialLines.joinToString("\n")
+                            _editableText.value = epubLines.take(1000).joinToString("\n")
                         }
+                    } else {
+                        val charset = FileUtils.determineCharset(context, uri, activeSettings.defaultEncoding)
+                        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                            val reader = inputStream.bufferedReader(charset)
+                            val initialLines = mutableListOf<String>()
+                            
+                            // First chunk: instantly load up to 1000 lines
+                            for (i in 0 until 1000) {
+                                val line = reader.readLine() ?: break
+                                initialLines.add(line)
+                            }
 
-                        // Background chunk streaming for larger files
-                        val streamBuffer = mutableListOf<String>()
-                        while (true) {
-                            val line = reader.readLine() ?: break
-                            streamBuffer.add(line)
-                            if (streamBuffer.size >= 3000) {
+                            // Send first chunk to UI instantly (so loading overlay goes away immediately)
+                            withContext(Dispatchers.Main) {
+                                _readerState.update {
+                                    it.copy(
+                                        isLoading = false,
+                                        lines = initialLines.toList()
+                                    )
+                                }
+                                _editableText.value = initialLines.joinToString("\n")
+                            }
+
+                            // Background chunk streaming for larger files
+                            val streamBuffer = mutableListOf<String>()
+                            while (true) {
+                                val line = reader.readLine() ?: break
+                                streamBuffer.add(line)
+                                if (streamBuffer.size >= 3000) {
+                                    val chunk = streamBuffer.toList()
+                                    streamBuffer.clear()
+                                    withContext(Dispatchers.Main) {
+                                        _readerState.update {
+                                            it.copy(lines = it.lines + chunk)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Flush remaining stream lines
+                            if (streamBuffer.isNotEmpty()) {
                                 val chunk = streamBuffer.toList()
-                                streamBuffer.clear()
                                 withContext(Dispatchers.Main) {
                                     _readerState.update {
                                         it.copy(lines = it.lines + chunk)
                                     }
-                                }
-                            }
-                        }
-
-                        // Flush remaining stream lines
-                        if (streamBuffer.isNotEmpty()) {
-                            val chunk = streamBuffer.toList()
-                            withContext(Dispatchers.Main) {
-                                _readerState.update {
-                                    it.copy(lines = it.lines + chunk)
                                 }
                             }
                         }
@@ -243,6 +257,7 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
     // Toggle Edit Mode with Adaptive Viewport selection to prevent full-file memory rendering lag
     fun toggleEditMode(visibleLineIndex: Int = 0) {
+        if (_readerState.value.language == "epub") return // Safe guard
         if (_isEditMode.value) {
             // Save edits
             saveEdits()

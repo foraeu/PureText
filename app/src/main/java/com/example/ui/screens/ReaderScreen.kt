@@ -197,21 +197,23 @@ fun ReaderScreen(
                         }
 
                         // Edit Toggle
-                        IconButton(
-                            onClick = {
-                                if (!isEditMode && readerState.size > 250_000) {
-                                    showLargeFileEditAlert = true
-                                } else {
-                                    onToggleEditMode(lazyListState.firstVisibleItemIndex)
-                                }
-                            },
-                            modifier = Modifier.testTag("toggle_edit_mode_btn")
-                        ) {
-                            Icon(
-                                imageVector = if (isEditMode) Icons.Default.Save else Icons.Default.EditNote,
-                                contentDescription = "Edit Mode",
-                                tint = if (isEditMode) theme.accent else theme.textPrimary
-                            )
+                        if (readerState.language != "epub") {
+                            IconButton(
+                                onClick = {
+                                    if (!isEditMode && readerState.size > 250_000) {
+                                        showLargeFileEditAlert = true
+                                    } else {
+                                        onToggleEditMode(lazyListState.firstVisibleItemIndex)
+                                    }
+                                },
+                                modifier = Modifier.testTag("toggle_edit_mode_btn")
+                            ) {
+                                Icon(
+                                    imageVector = if (isEditMode) Icons.Default.Save else Icons.Default.EditNote,
+                                    contentDescription = "Edit Mode",
+                                    tint = if (isEditMode) theme.accent else theme.textPrimary
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
