@@ -131,19 +131,20 @@ fun ReaderScreen(
         }
     }
 
+    val currentReaderState by rememberUpdatedState(readerState)
+
     // Subscribe to view model scroll request jumps
     LaunchedEffect(scrollRequest) {
         scrollRequest.collect { targetLine ->
-            if (targetLine in readerState.lines.indices) {
+            val latestState = currentReaderState
+            if (targetLine in latestState.lines.indices) {
                 // Ensurebars are visible on search selection
                 showUIBars = true
-                coroutineScope.launch {
-                    val currentIndex = lazyListState.firstVisibleItemIndex
-                    if (kotlin.math.abs(targetLine - currentIndex) < 200) {
-                        lazyListState.animateScrollToItem(targetLine)
-                    } else {
-                        lazyListState.scrollToItem(targetLine)
-                    }
+                val currentIndex = lazyListState.firstVisibleItemIndex
+                if (kotlin.math.abs(targetLine - currentIndex) < 200) {
+                    lazyListState.animateScrollToItem(targetLine)
+                } else {
+                    lazyListState.scrollToItem(targetLine)
                 }
             }
         }
