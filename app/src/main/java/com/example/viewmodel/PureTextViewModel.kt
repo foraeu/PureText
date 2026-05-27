@@ -19,6 +19,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 data class SearchResult(
     val lineIndex: Int,
@@ -184,15 +185,41 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
     // Load file inside standard coroutine with asynchronous streaming chunked loading
     fun openFile(uri: Uri) {
         val uriStr = uri.toString()
-        if (_tabs.value.containsKey(uriStr)) {
-            _activeTabUri.value = uriStr
-            return
-        }
+        val existingSession = _tabs.value[uriStr]
 
         viewModelScope.launch {
+            val isSameFile = if (existingSession != null) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        withTimeout(500L) {
+                            val currentMeta = FileUtils.getMetadata(context, uri)
+                            currentMeta.name == existingSession.fileName && currentMeta.size == existingSession.readerState.size
+                        }
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+            } else {
+                false
+            }
+
+            if (isSameFile) {
+                _activeTabUri.value = uriStr
+                return@launch
+            }
+
             try {
+                // 1. Check URI read permission first (fail fast if expired/inaccessible)
+                val hasPerm = hasUriPermission(uri)
+                if (!hasPerm) {
+                    throw SecurityException("Permission Denial: reading $uri requires URI permission grant")
+                }
+
+                // 2. Fetch metadata with a timeout
                 val metadata = withContext(Dispatchers.IO) {
-                    FileUtils.getMetadata(context, uri)
+                    withTimeout(1000L) {
+                        FileUtils.getMetadata(context, uri)
+                    }
                 }
                 val activeSettings = userSettings.value
                 val language = SyntaxHighlighter.detectLanguage(metadata.name)
@@ -248,57 +275,75 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
                 // Stream load the file in an asynchronous IO task
                 withContext(Dispatchers.IO) {
-                    if (language == "epub") {
-                        val epubLines = EpubParser.parseEpubToLines(context, uri)
-                        withContext(Dispatchers.Main) {
-                            _tabs.update { map ->
-                                val session = map[uriStr] ?: return@update map
-                                val updated = session.copy(
-                                    readerState = session.readerState.copy(
-                                        isLoading = false,
-                                        lines = epubLines
-                                    ),
-                                    editableText = epubLines.take(1000).joinToString("\n"),
-                                    outlineSymbols = OutlineParser.parseSymbols(epubLines, language)
-                                )
-                                map + (uriStr to updated)
-                            }
-                        }
-                    } else {
-                        val charset = FileUtils.determineCharset(context, uri, activeSettings.defaultEncoding)
-                        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                            val reader = inputStream.bufferedReader(charset)
-                            val initialLines = mutableListOf<String>()
-                            
-                            // First chunk: instantly load up to 1000 lines
-                            for (i in 0 until 1000) {
-                                val line = reader.readLine() ?: break
-                                initialLines.add(line)
-                            }
-
-                            // Send first chunk to UI instantly
+                    withTimeout(5000L) {
+                        if (language == "epub") {
+                            val epubLines = EpubParser.parseEpubToLines(context, uri)
                             withContext(Dispatchers.Main) {
                                 _tabs.update { map ->
                                     val session = map[uriStr] ?: return@update map
                                     val updated = session.copy(
                                         readerState = session.readerState.copy(
                                             isLoading = false,
-                                            lines = initialLines.toList()
+                                            lines = epubLines
                                         ),
-                                        editableText = initialLines.joinToString("\n")
+                                        editableText = epubLines.take(1000).joinToString("\n"),
+                                        outlineSymbols = OutlineParser.parseSymbols(epubLines, language)
                                     )
                                     map + (uriStr to updated)
                                 }
                             }
+                        } else {
+                            val charset = FileUtils.determineCharset(context, uri, activeSettings.defaultEncoding)
+                            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                                val reader = inputStream.bufferedReader(charset)
+                                val initialLines = mutableListOf<String>()
+                                
+                                // First chunk: instantly load up to 1000 lines
+                                for (i in 0 until 1000) {
+                                    val line = reader.readLine() ?: break
+                                    initialLines.add(line)
+                                }
 
-                            // Background chunk streaming for larger files
-                            val streamBuffer = mutableListOf<String>()
-                            while (true) {
-                                val line = reader.readLine() ?: break
-                                streamBuffer.add(line)
-                                if (streamBuffer.size >= 3000) {
+                                // Send first chunk to UI instantly
+                                withContext(Dispatchers.Main) {
+                                    _tabs.update { map ->
+                                        val session = map[uriStr] ?: return@update map
+                                        val updated = session.copy(
+                                            readerState = session.readerState.copy(
+                                                isLoading = false,
+                                                lines = initialLines.toList()
+                                            ),
+                                            editableText = initialLines.joinToString("\n")
+                                        )
+                                        map + (uriStr to updated)
+                                    }
+                                }
+
+                                // Background chunk streaming for larger files
+                                val streamBuffer = mutableListOf<String>()
+                                while (true) {
+                                    val line = reader.readLine() ?: break
+                                    streamBuffer.add(line)
+                                    if (streamBuffer.size >= 3000) {
+                                        val chunk = streamBuffer.toList()
+                                        streamBuffer.clear()
+                                        withContext(Dispatchers.Main) {
+                                            _tabs.update { map ->
+                                                val session = map[uriStr] ?: return@update map
+                                                val updated = session.copy(
+                                                    readerState = session.readerState.copy(
+                                                        lines = session.readerState.lines + chunk
+                                                    )
+                                                )
+                                                map + (uriStr to updated)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Flush remaining stream lines
+                                if (streamBuffer.isNotEmpty()) {
                                     val chunk = streamBuffer.toList()
-                                    streamBuffer.clear()
                                     withContext(Dispatchers.Main) {
                                         _tabs.update { map ->
                                             val session = map[uriStr] ?: return@update map
@@ -311,32 +356,16 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                                         }
                                     }
                                 }
-                            }
 
-                            // Flush remaining stream lines
-                            if (streamBuffer.isNotEmpty()) {
-                                val chunk = streamBuffer.toList()
+                                // Parse symbols after full file is loaded in memory
+                                val finalLines = _tabs.value[uriStr]?.readerState?.lines ?: emptyList()
+                                val symbols = OutlineParser.parseSymbols(finalLines, language)
                                 withContext(Dispatchers.Main) {
                                     _tabs.update { map ->
                                         val session = map[uriStr] ?: return@update map
-                                        val updated = session.copy(
-                                            readerState = session.readerState.copy(
-                                                lines = session.readerState.lines + chunk
-                                            )
-                                        )
+                                        val updated = session.copy(outlineSymbols = symbols)
                                         map + (uriStr to updated)
                                     }
-                                }
-                            }
-
-                            // Parse symbols after full file is loaded in memory
-                            val finalLines = _tabs.value[uriStr]?.readerState?.lines ?: emptyList()
-                            val symbols = OutlineParser.parseSymbols(finalLines, language)
-                            withContext(Dispatchers.Main) {
-                                _tabs.update { map ->
-                                    val session = map[uriStr] ?: return@update map
-                                    val updated = session.copy(outlineSymbols = symbols)
-                                    map + (uriStr to updated)
                                 }
                             }
                         }
@@ -370,6 +399,32 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             }
+        }
+    }
+
+    private suspend fun hasUriPermission(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        if (uri.scheme != "content") return@withContext true
+
+        // 1. Check explicit grant
+        val permissionResult = context.checkUriPermission(
+            uri,
+            android.os.Process.myPid(),
+            android.os.Process.myUid(),
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+        if (permissionResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return@withContext true
+        }
+
+        // 2. Quick lightweight query with a timeout to verify access
+        try {
+            withTimeout(300L) {
+                context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                    true
+                } ?: false
+            }
+        } catch (e: Exception) {
+            false
         }
     }
 
