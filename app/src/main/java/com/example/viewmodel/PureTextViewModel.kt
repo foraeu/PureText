@@ -38,6 +38,23 @@ data class ReaderState(
     val initialScrollOffset: Int = 0
 )
 
+data class TabSession(
+    val uriString: String,
+    val fileName: String,
+    val readerState: ReaderState,
+    val isEditMode: Boolean = false,
+    val editableText: String = "",
+    val hasUnsavedEdits: Boolean = false,
+    val editStartLineIndex: Int = 0,
+    val editEndLineIndex: Int = 0,
+    val searchQuery: String = "",
+    val searchCaseSensitive: Boolean = false,
+    val searchRegex: Boolean = false,
+    val searchResults: List<SearchResult> = emptyList(),
+    val currentSearchMatchIndex: Int = -1,
+    val outlineSymbols: List<OutlineSymbol> = emptyList()
+)
+
 @OptIn(FlowPreview::class)
 class PureTextViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -48,51 +65,71 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
     private val _userSettings = MutableStateFlow(UserSettings())
     val userSettings: StateFlow<UserSettings> = _userSettings.asStateFlow()
 
-    // Outline Symbols State
-    private val _outlineSymbols = MutableStateFlow<List<OutlineSymbol>>(emptyList())
-    val outlineSymbols: StateFlow<List<OutlineSymbol>> = _outlineSymbols.asStateFlow()
-    
     // Recent Files State
     val recentFiles: StateFlow<List<RecentFile>>
 
-    // Session Reader State
-    private val _readerState = MutableStateFlow(ReaderState())
-    val readerState: StateFlow<ReaderState> = _readerState.asStateFlow()
+    // Tabs Management State
+    private val _tabs = MutableStateFlow<Map<String, TabSession>>(emptyMap())
+    val tabs: StateFlow<List<Pair<String, String>>> = _tabs
+        .map { map -> map.values.map { it.uriString to it.fileName } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Mode: Boolean value for Read-Only vs Edit
-    private val _isEditMode = MutableStateFlow(false)
-    val isEditMode: StateFlow<Boolean> = _isEditMode.asStateFlow()
+    private val _activeTabUri = MutableStateFlow<String?>(null)
+    val activeTabUri: StateFlow<String?> = _activeTabUri.asStateFlow()
 
-    // Live modified full text state when editing
-    private val _editableText = MutableStateFlow("")
-    val editableText: StateFlow<String> = _editableText.asStateFlow()
+    // Active session flow mapping
+    private val activeSession: Flow<TabSession?> = combine(_activeTabUri, _tabs) { activeUri, map ->
+        activeUri?.let { map[it] }
+    }
 
-    // Highlight text change flags
-    private val _hasUnsavedEdits = MutableStateFlow(false)
-    val hasUnsavedEdits: StateFlow<Boolean> = _hasUnsavedEdits.asStateFlow()
+    // Reactively derived exposed StateFlows for compatibility with existing UI consumers
+    val readerState: StateFlow<ReaderState> = activeSession
+        .map { it?.readerState ?: ReaderState() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ReaderState())
 
-    // Sliding Edit Viewport coordinates
-    private val _editStartLineIndex = MutableStateFlow(0)
-    val editStartLineIndex: StateFlow<Int> = _editStartLineIndex.asStateFlow()
+    val isEditMode: StateFlow<Boolean> = activeSession
+        .map { it?.isEditMode ?: false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    private val _editEndLineIndex = MutableStateFlow(0)
-    val editEndLineIndex: StateFlow<Int> = _editEndLineIndex.asStateFlow()
+    val editableText: StateFlow<String> = activeSession
+        .map { it?.editableText ?: "" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
-    // Search Engine States
-    private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    val hasUnsavedEdits: StateFlow<Boolean> = activeSession
+        .map { it?.hasUnsavedEdits ?: false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    private val _searchCaseSensitive = MutableStateFlow(false)
-    val searchCaseSensitive: StateFlow<Boolean> = _searchCaseSensitive.asStateFlow()
+    val editStartLineIndex: StateFlow<Int> = activeSession
+        .map { it?.editStartLineIndex ?: 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    private val _searchRegex = MutableStateFlow(false)
-    val searchRegex: StateFlow<Boolean> = _searchRegex.asStateFlow()
+    val editEndLineIndex: StateFlow<Int> = activeSession
+        .map { it?.editEndLineIndex ?: 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
-    val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
+    val searchQuery: StateFlow<String> = activeSession
+        .map { it?.searchQuery ?: "" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
-    private val _currentSearchMatchIndex = MutableStateFlow(-1)
-    val currentSearchMatchIndex: StateFlow<Int> = _currentSearchMatchIndex.asStateFlow()
+    val searchCaseSensitive: StateFlow<Boolean> = activeSession
+        .map { it?.searchCaseSensitive ?: false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val searchRegex: StateFlow<Boolean> = activeSession
+        .map { it?.searchRegex ?: false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val searchResults: StateFlow<List<SearchResult>> = activeSession
+        .map { it?.searchResults ?: emptyList() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val currentSearchMatchIndex: StateFlow<Int> = activeSession
+        .map { it?.currentSearchMatchIndex ?: -1 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
+
+    val outlineSymbols: StateFlow<List<OutlineSymbol>> = activeSession
+        .map { it?.outlineSymbols ?: emptyList() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Navigation trigger for visual jumps to line index
     private val _scrollRequest = MutableSharedFlow<Int>(replay = 0)
@@ -125,12 +162,17 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
         // Asynchronous debounced search observer
         combine(
-            _searchQuery,
-            _searchCaseSensitive,
-            _searchRegex,
-            _readerState.map { it.lines }
-        ) { query, caseSensitive, regex, lines ->
-            SearchInput(query, caseSensitive, regex, lines)
+            _activeTabUri,
+            _tabs
+        ) { activeUri, map ->
+            val session = activeUri?.let { map[it] }
+            SearchInput(
+                activeUri = activeUri,
+                query = session?.searchQuery ?: "",
+                caseSensitive = session?.searchCaseSensitive ?: false,
+                regex = session?.searchRegex ?: false,
+                lines = session?.readerState?.lines ?: emptyList()
+            )
         }
         .debounce(300L)
         .onEach { input ->
@@ -141,11 +183,51 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
     // Load file inside standard coroutine with asynchronous streaming chunked loading
     fun openFile(uri: Uri) {
+        val uriStr = uri.toString()
+        if (_tabs.value.containsKey(uriStr)) {
+            _activeTabUri.value = uriStr
+            return
+        }
+
         viewModelScope.launch {
-            _readerState.update { it.copy(isLoading = true, error = null) }
-            _isEditMode.value = false
-            _hasUnsavedEdits.value = false
-            clearSearch()
+            val metadata = FileUtils.getMetadata(context, uri)
+            val activeSettings = userSettings.value
+            val language = SyntaxHighlighter.detectLanguage(metadata.name)
+
+            val dbFile = withContext(Dispatchers.IO) {
+                repository.getRecentFileByUri(uriStr)
+            }
+
+            val initialSession = TabSession(
+                uriString = uriStr,
+                fileName = metadata.name,
+                readerState = ReaderState(
+                    uriString = uriStr,
+                    fileName = metadata.name,
+                    size = metadata.size,
+                    language = language,
+                    isLoading = true,
+                    lines = emptyList(),
+                    initialScrollIndex = dbFile?.scrollIndex ?: 0,
+                    initialScrollOffset = dbFile?.scrollOffset ?: 0
+                )
+            )
+
+            _tabs.update { it + (uriStr to initialSession) }
+            _activeTabUri.value = uriStr
+
+            // Save to Room Recents
+            repository.insertRecentFile(
+                RecentFile(
+                    uriString = uriStr,
+                    name = metadata.name,
+                    size = metadata.size,
+                    lastOpened = System.currentTimeMillis(),
+                    language = language,
+                    scrollIndex = dbFile?.scrollIndex ?: 0,
+                    scrollOffset = dbFile?.scrollOffset ?: 0
+                )
+            )
 
             try {
                 // Try to persist the read & write permissions if it is a content URI
@@ -162,52 +244,23 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
 
-                val metadata = FileUtils.getMetadata(context, uri)
-                val activeSettings = userSettings.value
-                val language = SyntaxHighlighter.detectLanguage(metadata.name)
-
-                val dbFile = withContext(Dispatchers.IO) {
-                    repository.getRecentFileByUri(uri.toString())
-                }
-
-                // Initial quick settings load
-                _readerState.value = ReaderState(
-                    uriString = uri.toString(),
-                    fileName = metadata.name,
-                    size = metadata.size,
-                    language = language,
-                    isLoading = true,
-                    lines = emptyList(),
-                    initialScrollIndex = dbFile?.scrollIndex ?: 0,
-                    initialScrollOffset = dbFile?.scrollOffset ?: 0
-                )
-
-                // Save to Room Recents
-                repository.insertRecentFile(
-                    RecentFile(
-                        uriString = uri.toString(),
-                        name = metadata.name,
-                        size = metadata.size,
-                        lastOpened = System.currentTimeMillis(),
-                        language = language,
-                        scrollIndex = dbFile?.scrollIndex ?: 0,
-                        scrollOffset = dbFile?.scrollOffset ?: 0
-                    )
-                )
-
                 // Stream load the file in an asynchronous IO task
                 withContext(Dispatchers.IO) {
                     if (language == "epub") {
                         val epubLines = EpubParser.parseEpubToLines(context, uri)
                         withContext(Dispatchers.Main) {
-                            _readerState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    lines = epubLines
+                            _tabs.update { map ->
+                                val session = map[uriStr] ?: return@update map
+                                val updated = session.copy(
+                                    readerState = session.readerState.copy(
+                                        isLoading = false,
+                                        lines = epubLines
+                                    ),
+                                    editableText = epubLines.take(1000).joinToString("\n"),
+                                    outlineSymbols = OutlineParser.parseSymbols(epubLines, language)
                                 )
+                                map + (uriStr to updated)
                             }
-                            _editableText.value = epubLines.take(1000).joinToString("\n")
-                            _outlineSymbols.value = OutlineParser.parseSymbols(epubLines, language)
                         }
                     } else {
                         val charset = FileUtils.determineCharset(context, uri, activeSettings.defaultEncoding)
@@ -221,15 +274,19 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                                 initialLines.add(line)
                             }
 
-                            // Send first chunk to UI instantly (so loading overlay goes away immediately)
+                            // Send first chunk to UI instantly
                             withContext(Dispatchers.Main) {
-                                _readerState.update {
-                                    it.copy(
-                                        isLoading = false,
-                                        lines = initialLines.toList()
+                                _tabs.update { map ->
+                                    val session = map[uriStr] ?: return@update map
+                                    val updated = session.copy(
+                                        readerState = session.readerState.copy(
+                                            isLoading = false,
+                                            lines = initialLines.toList()
+                                        ),
+                                        editableText = initialLines.joinToString("\n")
                                     )
+                                    map + (uriStr to updated)
                                 }
-                                _editableText.value = initialLines.joinToString("\n")
                             }
 
                             // Background chunk streaming for larger files
@@ -241,8 +298,14 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                                     val chunk = streamBuffer.toList()
                                     streamBuffer.clear()
                                     withContext(Dispatchers.Main) {
-                                        _readerState.update {
-                                            it.copy(lines = it.lines + chunk)
+                                        _tabs.update { map ->
+                                            val session = map[uriStr] ?: return@update map
+                                            val updated = session.copy(
+                                                readerState = session.readerState.copy(
+                                                    lines = session.readerState.lines + chunk
+                                                )
+                                            )
+                                            map + (uriStr to updated)
                                         }
                                     }
                                 }
@@ -252,179 +315,234 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                             if (streamBuffer.isNotEmpty()) {
                                 val chunk = streamBuffer.toList()
                                 withContext(Dispatchers.Main) {
-                                    _readerState.update {
-                                        it.copy(lines = it.lines + chunk)
+                                    _tabs.update { map ->
+                                        val session = map[uriStr] ?: return@update map
+                                        val updated = session.copy(
+                                            readerState = session.readerState.copy(
+                                                lines = session.readerState.lines + chunk
+                                            )
+                                        )
+                                        map + (uriStr to updated)
                                     }
                                 }
                             }
 
                             // Parse symbols after full file is loaded in memory
-                            val finalLines = _readerState.value.lines
+                            val finalLines = _tabs.value[uriStr]?.readerState?.lines ?: emptyList()
                             val symbols = OutlineParser.parseSymbols(finalLines, language)
                             withContext(Dispatchers.Main) {
-                                _outlineSymbols.value = symbols
+                                _tabs.update { map ->
+                                    val session = map[uriStr] ?: return@update map
+                                    val updated = session.copy(outlineSymbols = symbols)
+                                    map + (uriStr to updated)
+                                }
                             }
                         }
                     }
                 }
 
             } catch (e: Exception) {
-                _readerState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.localizedMessage ?: "Failed to open document"
+                _tabs.update { map ->
+                    val session = map[uriStr] ?: return@update map
+                    val updated = session.copy(
+                        readerState = session.readerState.copy(
+                            isLoading = false,
+                            error = e.localizedMessage ?: "Failed to open document"
+                        )
                     )
+                    map + (uriStr to updated)
                 }
             }
         }
     }
 
-    // Toggle Edit Mode with Adaptive Viewport selection to prevent full-file memory rendering lag
+    // Toggle Edit Mode with Adaptive Viewport selection
     fun toggleEditMode(visibleLineIndex: Int = 0) {
-        if (_readerState.value.language == "epub") return // Safe guard
-        if (_isEditMode.value) {
-            // Save edits
+        val activeUri = _activeTabUri.value ?: return
+        val session = _tabs.value[activeUri] ?: return
+        if (session.readerState.language == "epub") return // Safe guard
+        
+        if (session.isEditMode) {
             saveEdits()
         } else {
-            val totalLines = _readerState.value.lines.size
+            val totalLines = session.readerState.lines.size
+            val start: Int
+            val end: Int
+            val editText: String
+
             if (totalLines == 0) {
-                _editStartLineIndex.value = 0
-                _editEndLineIndex.value = 0
-                _editableText.value = ""
+                start = 0
+                end = 0
+                editText = ""
             } else {
-                // Initialize Viewport Window around current visible line (span around 400 lines)
-                val start = (visibleLineIndex - 100).coerceAtLeast(0)
-                val end = (visibleLineIndex + 300).coerceAtMost(totalLines - 1)
-
-                _editStartLineIndex.value = start
-                _editEndLineIndex.value = end
-
-                val windowLines = _readerState.value.lines.subList(start, end + 1)
-                _editableText.value = windowLines.joinToString("\n")
+                val sVal = (visibleLineIndex - 100).coerceAtLeast(0)
+                val eVal = (visibleLineIndex + 300).coerceAtMost(totalLines - 1)
+                start = sVal
+                end = eVal
+                val windowLines = session.readerState.lines.subList(sVal, eVal + 1)
+                editText = windowLines.joinToString("\n")
             }
-            _isEditMode.value = true
-            _hasUnsavedEdits.value = false
+
+            _tabs.update { map ->
+                val s = map[activeUri] ?: return@update map
+                val updated = s.copy(
+                    isEditMode = true,
+                    editableText = editText,
+                    editStartLineIndex = start,
+                    editEndLineIndex = end,
+                    hasUnsavedEdits = false
+                )
+                map + (activeUri to updated)
+            }
         }
     }
 
     // Commit active viewport changes back to overall list in memory
     fun commitActiveViewportToLinesMemory() {
-        val currentText = _editableText.value
+        val activeUri = _activeTabUri.value ?: return
+        val session = _tabs.value[activeUri] ?: return
+        val currentText = session.editableText
         val newWindowLines = currentText.split(Regex("\\r?\\n"))
-        val allLines = _readerState.value.lines.toMutableList()
-        val start = _editStartLineIndex.value
-        val end = _editEndLineIndex.value
+        val allLines = session.readerState.lines.toMutableList()
+        val start = session.editStartLineIndex
+        val end = session.editEndLineIndex
 
+        val newEnd: Int
         if (allLines.isNotEmpty() && start in allLines.indices && end in allLines.indices && start <= end) {
             val safeStart = start.coerceIn(0, allLines.lastIndex)
             val safeEnd = end.coerceIn(safeStart, allLines.lastIndex)
-            // Single O(n) bulk shift via subList clear
+            // Single O(n) bulk shift
             allLines.subList(safeStart, safeEnd + 1).clear()
-            // Add new edited lines at start
             allLines.addAll(safeStart, newWindowLines)
-            _editEndLineIndex.value = safeStart + newWindowLines.size - 1
+            newEnd = safeStart + newWindowLines.size - 1
         } else {
             allLines.clear()
             allLines.addAll(newWindowLines)
-            _editEndLineIndex.value = newWindowLines.size - 1
+            newEnd = newWindowLines.size - 1
         }
 
-        _readerState.update { it.copy(lines = allLines) }
+        _tabs.update { map ->
+            val s = map[activeUri] ?: return@update map
+            val updated = s.copy(
+                readerState = s.readerState.copy(lines = allLines),
+                editEndLineIndex = newEnd
+            )
+            map + (activeUri to updated)
+        }
     }
 
     // Move sliding edit viewport window forwards/backwards
     fun navigateEditWindow(direction: Int) { // -1 for page back, +1 for page forward
-        // First commit the current window edits to memory list
         commitActiveViewportToLinesMemory()
 
-        val updatedLines = _readerState.value.lines
+        val activeUri = _activeTabUri.value ?: return
+        val session = _tabs.value[activeUri] ?: return
+        val updatedLines = session.readerState.lines
         val totalLines = updatedLines.size
         if (totalLines == 0) return
 
-        val currentStart = _editStartLineIndex.value
-        val currentEnd = _editEndLineIndex.value
+        val currentStart = session.editStartLineIndex
+        val currentEnd = session.editEndLineIndex
         val windowSize = 300
 
         val (start, end) = if (direction < 0) {
-            // Move backward: the new end is currentStart - 1
             val targetEnd = (currentStart - 1).coerceIn(0, totalLines - 1)
             val targetStart = (targetEnd - windowSize + 1).coerceAtLeast(0)
             Pair(targetStart, targetEnd)
         } else {
-            // Move forward: the new start is currentEnd + 1
             val targetStart = (currentEnd + 1).coerceIn(0, totalLines - 1)
             val targetEnd = (targetStart + windowSize - 1).coerceAtMost(totalLines - 1)
             Pair(targetStart, targetEnd)
         }
 
-        _editStartLineIndex.value = start
-        _editEndLineIndex.value = end
-
         val windowLines = updatedLines.subList(start, end + 1)
-        _editableText.value = windowLines.joinToString("\n")
-        _hasUnsavedEdits.value = true
+        _tabs.update { map ->
+            val s = map[activeUri] ?: return@update map
+            val updated = s.copy(
+                editStartLineIndex = start,
+                editEndLineIndex = end,
+                editableText = windowLines.joinToString("\n"),
+                hasUnsavedEdits = true
+            )
+            map + (activeUri to updated)
+        }
     }
 
-    // Update Live Editor Text with optimized validation
+    // Update Live Editor Text
     fun updateEditableText(newText: String) {
-        _editableText.value = newText
-        val start = _editStartLineIndex.value
-        val end = _editEndLineIndex.value
-        val lines = _readerState.value.lines
-        val original = if (lines.isNotEmpty() && start in lines.indices && end in lines.indices && start <= end) {
-            lines.subList(start, end + 1).joinToString("\n")
-        } else ""
-        _hasUnsavedEdits.value = newText != original
+        val activeUri = _activeTabUri.value ?: return
+        _tabs.update { map ->
+            val session = map[activeUri] ?: return@update map
+            val start = session.editStartLineIndex
+            val end = session.editEndLineIndex
+            val lines = session.readerState.lines
+            val original = if (lines.isNotEmpty() && start in lines.indices && end in lines.indices && start <= end) {
+                lines.subList(start, end + 1).joinToString("\n")
+            } else ""
+            val updated = session.copy(
+                editableText = newText,
+                hasUnsavedEdits = newText != original
+            )
+            map + (activeUri to updated)
+        }
     }
 
-    // Save Changes Back to Content Provider / File with full reconstruction
+    // Save Changes Back to Content Provider / File
     fun saveEdits() {
-        val uriStr = _readerState.value.uriString ?: return
+        val activeUri = _activeTabUri.value ?: return
+        val session = _tabs.value[activeUri] ?: return
         val activeSettings = userSettings.value
-        val uri = Uri.parse(uriStr)
+        val uri = Uri.parse(activeUri)
 
         viewModelScope.launch {
-            _readerState.update { it.copy(isLoading = true) }
+            _tabs.update { map ->
+                val s = map[activeUri] ?: return@update map
+                val updated = s.copy(readerState = s.readerState.copy(isLoading = true))
+                map + (activeUri to updated)
+            }
             
-            // Commit current edited section to memory lines list
             commitActiveViewportToLinesMemory()
 
+            val latestSession = _tabs.value[activeUri] ?: return@launch
             val isSuccess = withContext(Dispatchers.IO) {
-                FileUtils.writeLinesToUri(context, uri, _readerState.value.lines, activeSettings.defaultEncoding)
+                FileUtils.writeLinesToUri(context, uri, latestSession.readerState.lines, activeSettings.defaultEncoding)
             }
 
             if (isSuccess) {
-                _readerState.update {
-                    it.copy(
-                        isLoading = false
-                    )
-                }
-                _hasUnsavedEdits.value = false
-                _isEditMode.value = false
-
-                // Update size metadata in database
                 val metadata = FileUtils.getMetadata(context, uri)
                 repository.insertRecentFile(
                     RecentFile(
-                        uriString = uriStr,
+                        uriString = activeUri,
                         name = metadata.name,
                         size = metadata.size,
                         lastOpened = System.currentTimeMillis(),
-                        language = _readerState.value.language,
+                        language = latestSession.readerState.language,
                         scrollIndex = 0,
                         scrollOffset = 0
                     )
                 )
 
-                // Re-parse outline symbols after saving edits
-                val symbols = OutlineParser.parseSymbols(_readerState.value.lines, _readerState.value.language)
-                _outlineSymbols.value = symbols
-            } else {
-                _readerState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = "更新文件内容失败"
+                val symbols = OutlineParser.parseSymbols(latestSession.readerState.lines, latestSession.readerState.language)
+                _tabs.update { map ->
+                    val s = map[activeUri] ?: return@update map
+                    val updated = s.copy(
+                        readerState = s.readerState.copy(isLoading = false),
+                        hasUnsavedEdits = false,
+                        isEditMode = false,
+                        outlineSymbols = symbols
                     )
+                    map + (activeUri to updated)
+                }
+            } else {
+                _tabs.update { map ->
+                    val s = map[activeUri] ?: return@update map
+                    val updated = s.copy(
+                        readerState = s.readerState.copy(
+                            isLoading = false,
+                            error = "更新文件内容失败"
+                        )
+                    )
+                    map + (activeUri to updated)
                 }
             }
         }
@@ -432,9 +550,9 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
     // Scroll Coordinates Tracking
     fun updateScrollCoordinates(index: Int, offset: Int) {
-        val uriStr = _readerState.value.uriString ?: return
+        val activeUri = _activeTabUri.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            repository.updateScrollPosition(uriStr, index, offset)
+            repository.updateScrollPosition(activeUri, index, offset)
         }
     }
 
@@ -444,11 +562,32 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
         val updated = reducer(oldSettings)
         _userSettings.value = updated
 
-        // Re-read with fallback encoding if encoding name changed
-        val uriStr = _readerState.value.uriString
-        if (uriStr != null && updated.defaultEncoding != oldSettings.defaultEncoding) {
+        val activeUri = _activeTabUri.value
+        if (activeUri != null && updated.defaultEncoding != oldSettings.defaultEncoding) {
+            // Remove from tabs to force re-reading with new encoding
+            _tabs.update { it - activeUri }
             viewModelScope.launch {
-                openFile(Uri.parse(uriStr))
+                openFile(Uri.parse(activeUri))
+            }
+        }
+    }
+
+    // Tab Tab Operations
+    fun selectTab(uriStr: String) {
+        if (_tabs.value.containsKey(uriStr)) {
+            _activeTabUri.value = uriStr
+        }
+    }
+
+    fun closeTab(uriStr: String, onAllTabsClosed: () -> Unit) {
+        _tabs.update { it - uriStr }
+        if (_activeTabUri.value == uriStr) {
+            val remaining = _tabs.value.keys.toList()
+            if (remaining.isNotEmpty()) {
+                _activeTabUri.value = remaining.last()
+            } else {
+                _activeTabUri.value = null
+                onAllTabsClosed()
             }
         }
     }
@@ -457,6 +596,10 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
     fun deleteRecent(file: RecentFile) {
         viewModelScope.launch {
             repository.deleteRecentFile(file)
+            // Close tab as well if open
+            if (_tabs.value.containsKey(file.uriString)) {
+                closeTab(file.uriString) {}
+            }
         }
     }
 
@@ -464,10 +607,13 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
     fun clearAllRecents() {
         viewModelScope.launch {
             repository.clearAllRecents()
+            _tabs.value = emptyMap()
+            _activeTabUri.value = null
         }
     }
 
     private data class SearchInput(
+        val activeUri: String?,
         val query: String,
         val caseSensitive: Boolean,
         val regex: Boolean,
@@ -476,26 +622,45 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
     // Search Engine Implementation
     fun updateSearchQuery(query: String) {
-        _searchQuery.value = query
-        if (query.isEmpty()) {
-            _searchResults.value = emptyList()
-            _currentSearchMatchIndex.value = -1
+        val activeUri = _activeTabUri.value ?: return
+        _tabs.update { map ->
+            val session = map[activeUri] ?: return@update map
+            val updated = session.copy(
+                searchQuery = query,
+                searchResults = if (query.isEmpty()) emptyList() else session.searchResults,
+                currentSearchMatchIndex = if (query.isEmpty()) -1 else session.currentSearchMatchIndex
+            )
+            map + (activeUri to updated)
         }
     }
 
     fun toggleSearchCaseSensitive() {
-        _searchCaseSensitive.value = !_searchCaseSensitive.value
+        val activeUri = _activeTabUri.value ?: return
+        _tabs.update { map ->
+            val session = map[activeUri] ?: return@update map
+            val updated = session.copy(searchCaseSensitive = !session.searchCaseSensitive)
+            map + (activeUri to updated)
+        }
     }
 
     fun toggleSearchRegex() {
-        _searchRegex.value = !_searchRegex.value
+        val activeUri = _activeTabUri.value ?: return
+        _tabs.update { map ->
+            val session = map[activeUri] ?: return@update map
+            val updated = session.copy(searchRegex = !session.searchRegex)
+            map + (activeUri to updated)
+        }
     }
 
     private suspend fun performSearchOnInput(input: SearchInput) {
+        val activeUri = input.activeUri ?: return
         val query = input.query
         if (query.isEmpty()) {
-            _searchResults.value = emptyList()
-            _currentSearchMatchIndex.value = -1
+            _tabs.update { map ->
+                val session = map[activeUri] ?: return@update map
+                val updated = session.copy(searchResults = emptyList(), currentSearchMatchIndex = -1)
+                map + (activeUri to updated)
+            }
             return
         }
 
@@ -504,7 +669,6 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
             val tempMatches = mutableListOf<SearchResult>()
             try {
                 if (input.regex) {
-                    // Regular Expression search
                     val options = if (input.caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
                     val regex = Regex(query, options)
                     lines.forEachIndexed { lineIdx, line ->
@@ -513,7 +677,6 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                         }
                     }
                 } else {
-                    // Straight substring match
                     val sensitive = input.caseSensitive
                     lines.forEachIndexed { lineIdx, line ->
                         var startIdx = 0
@@ -522,51 +685,70 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                             if (foundIdx == -1) break
                             tempMatches.add(SearchResult(lineIndex = lineIdx, charIndex = foundIdx, length = query.length))
                             startIdx = foundIdx + query.length
-                            if (query.isEmpty()) break // Safe guard
+                            if (query.isEmpty()) break
                         }
                     }
                 }
             } catch (e: Exception) {
-                // Safe guard against invalid regex input
+                // Ignore invalid regex
             }
             tempMatches
         }
 
-        _searchResults.value = matches
+        _tabs.update { map ->
+            val session = map[activeUri] ?: return@update map
+            val matchIndex = if (matches.isNotEmpty()) 0 else -1
+            val updated = session.copy(searchResults = matches, currentSearchMatchIndex = matchIndex)
+            map + (activeUri to updated)
+        }
+
         if (matches.isNotEmpty()) {
-            _currentSearchMatchIndex.value = 0
-            triggerScrollToSearchResult(0)
-        } else {
-            _currentSearchMatchIndex.value = -1
+            triggerScrollToSearchResult(activeUri, 0)
         }
     }
 
     fun goToNextSearchMatch() {
-        val results = _searchResults.value
+        val activeUri = _activeTabUri.value ?: return
+        val session = _tabs.value[activeUri] ?: return
+        val results = session.searchResults
         if (results.isEmpty()) return
-        val nextIdx = (_currentSearchMatchIndex.value + 1) % results.size
-        _currentSearchMatchIndex.value = nextIdx
-        triggerScrollToSearchResult(nextIdx)
+        val nextIdx = (session.currentSearchMatchIndex + 1) % results.size
+        _tabs.update { map ->
+            val s = map[activeUri] ?: return@update map
+            val updated = s.copy(currentSearchMatchIndex = nextIdx)
+            map + (activeUri to updated)
+        }
+        triggerScrollToSearchResult(activeUri, nextIdx)
     }
 
     fun goToPrevSearchMatch() {
-        val results = _searchResults.value
+        val activeUri = _activeTabUri.value ?: return
+        val session = _tabs.value[activeUri] ?: return
+        val results = session.searchResults
         if (results.isEmpty()) return
-        val prevIdx = (_currentSearchMatchIndex.value - 1 + results.size) % results.size
-        _currentSearchMatchIndex.value = prevIdx
-        triggerScrollToSearchResult(prevIdx)
+        val prevIdx = (session.currentSearchMatchIndex - 1 + results.size) % results.size
+        _tabs.update { map ->
+            val s = map[activeUri] ?: return@update map
+            val updated = s.copy(currentSearchMatchIndex = prevIdx)
+            map + (activeUri to updated)
+        }
+        triggerScrollToSearchResult(activeUri, prevIdx)
     }
 
     private fun triggerScrollToSearchResult(index: Int) {
-        val match = _searchResults.value.getOrNull(index) ?: return
-        viewModelScope.launch {
-            _scrollRequest.emit(match.lineIndex)
-        }
+        // Fallback for older code compatibility, does nothing as we use the activeUri version
     }
 
     fun clearSearch() {
-        _searchQuery.value = ""
-        _searchResults.value = emptyList()
-        _currentSearchMatchIndex.value = -1
+        val activeUri = _activeTabUri.value ?: return
+        _tabs.update { map ->
+            val session = map[activeUri] ?: return@update map
+            val updated = session.copy(
+                searchQuery = "",
+                searchResults = emptyList(),
+                currentSearchMatchIndex = -1
+            )
+            map + (activeUri to updated)
+        }
     }
 }

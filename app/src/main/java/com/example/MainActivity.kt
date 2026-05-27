@@ -79,6 +79,8 @@ class MainActivity : ComponentActivity() {
                             val editStartLineIndex by viewModel.editStartLineIndex.collectAsStateWithLifecycle()
                             val editEndLineIndex by viewModel.editEndLineIndex.collectAsStateWithLifecycle()
                             val outlineSymbols by viewModel.outlineSymbols.collectAsStateWithLifecycle()
+                            val tabs by viewModel.tabs.collectAsStateWithLifecycle()
+                            val activeTabUri by viewModel.activeTabUri.collectAsStateWithLifecycle()
 
                             ReaderScreen(
                                 theme = theme,
@@ -96,6 +98,14 @@ class MainActivity : ComponentActivity() {
                                 currentSearchMatchIndex = matchIndex,
                                 scrollRequest = viewModel.scrollRequest,
                                 outlineSymbols = outlineSymbols,
+                                tabs = tabs,
+                                activeTabUri = activeTabUri,
+                                onSelectTab = { viewModel.selectTab(it) },
+                                onCloseTab = { uri ->
+                                    viewModel.closeTab(uri) {
+                                        navController.navigateUp()
+                                    }
+                                },
                                 onUpdateSettings = { viewModel.updateSettings(it) },
                                 onToggleEditMode = { viewModel.toggleEditMode(it) },
                                 onNavigateEditWindow = { viewModel.navigateEditWindow(it) },

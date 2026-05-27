@@ -9,6 +9,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -84,6 +85,10 @@ fun ReaderScreen(
     onNavigateBack: () -> Unit,
     onOpenFile: (Uri) -> Unit = {},
     outlineSymbols: List<OutlineSymbol> = emptyList(),
+    tabs: List<Pair<String, String>> = emptyList(),
+    activeTabUri: String? = null,
+    onSelectTab: (String) -> Unit = {},
+    onCloseTab: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -230,101 +235,166 @@ fun ReaderScreen(
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
             ) {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = readerState.fileName,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = theme.textPrimary
-                                ),
-                                maxLines = 1
-                            )
-                            if (readerState.lines.isNotEmpty()) {
+                Column {
+                    TopAppBar(
+                        title = {
+                            Column {
                                 Text(
-                                    text = "共 ${readerState.lines.size} 行 • ${readerState.language}",
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        color = theme.textPrimary.copy(alpha = 0.5f),
-                                        fontSize = 11.sp
-                                    )
+                                    text = readerState.fileName,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = theme.textPrimary
+                                    ),
+                                    maxLines = 1
                                 )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = onNavigateBack,
-                            modifier = Modifier.testTag("reader_back_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Go Back",
-                                tint = theme.textPrimary
-                            )
-                        }
-                    },
-                    actions = {
-                        // Outline Button
-                        if (outlineSymbols.isNotEmpty()) {
-                            IconButton(onClick = {
-                                coroutineScope.launch {
-                                    drawerState.open()
+                                if (readerState.lines.isNotEmpty()) {
+                                    Text(
+                                        text = "共 ${readerState.lines.size} 行 • ${readerState.language}",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = theme.textPrimary.copy(alpha = 0.5f),
+                                            fontSize = 11.sp
+                                        )
+                                    )
                                 }
-                            }) {
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(
+                                onClick = onNavigateBack,
+                                modifier = Modifier.testTag("reader_back_btn")
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Toc,
-                                    contentDescription = "Outline List",
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Go Back",
                                     tint = theme.textPrimary
                                 )
                             }
-                        }
-
-                        // Search Button
-                        IconButton(onClick = {
-                            showSearchPanel = !showSearchPanel
-                            if (!showSearchPanel) onClearSearch()
-                        }) {
-                            Icon(
-                                imageVector = if (showSearchPanel) Icons.Default.SearchOff else Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = if (showSearchPanel) theme.accent else theme.textPrimary
-                            )
-                        }
-
-                        // Quick Settings Popover
-                        IconButton(onClick = { showQuickSettingsMenu = !showQuickSettingsMenu }) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = "Quick Adjust",
-                                tint = theme.textPrimary
-                            )
-                        }
-
-                        // Edit Toggle
-                        if (readerState.language != "epub") {
-                            IconButton(
-                                onClick = {
-                                    if (!isEditMode && readerState.size > 250_000) {
-                                        showLargeFileEditAlert = true
-                                    } else {
-                                        onToggleEditMode(lazyListState.firstVisibleItemIndex)
+                        },
+                        actions = {
+                            // Outline Button
+                            if (outlineSymbols.isNotEmpty()) {
+                                IconButton(onClick = {
+                                    coroutineScope.launch {
+                                        drawerState.open()
                                     }
-                                },
-                                modifier = Modifier.testTag("toggle_edit_mode_btn")
-                            ) {
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Toc,
+                                        contentDescription = "Outline List",
+                                        tint = theme.textPrimary
+                                    )
+                                }
+                            }
+
+                            // Search Button
+                            IconButton(onClick = {
+                                showSearchPanel = !showSearchPanel
+                                if (!showSearchPanel) onClearSearch()
+                            }) {
                                 Icon(
-                                    imageVector = if (isEditMode) Icons.Default.Save else Icons.Default.EditNote,
-                                    contentDescription = "Edit Mode",
-                                    tint = if (isEditMode) theme.accent else theme.textPrimary
+                                    imageVector = if (showSearchPanel) Icons.Default.SearchOff else Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = if (showSearchPanel) theme.accent else theme.textPrimary
                                 )
                             }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = theme.surface
+
+                            // Quick Settings Popover
+                            IconButton(onClick = { showQuickSettingsMenu = !showQuickSettingsMenu }) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "Quick Adjust",
+                                    tint = theme.textPrimary
+                                )
+                            }
+
+                            // Edit Toggle
+                            if (readerState.language != "epub") {
+                                IconButton(
+                                    onClick = {
+                                        if (!isEditMode && readerState.size > 250_000) {
+                                            showLargeFileEditAlert = true
+                                        } else {
+                                            onToggleEditMode(lazyListState.firstVisibleItemIndex)
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("toggle_edit_mode_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = if (isEditMode) Icons.Default.Save else Icons.Default.EditNote,
+                                        contentDescription = "Edit Mode",
+                                        tint = if (isEditMode) theme.accent else theme.textPrimary
+                                    )
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = theme.surface
+                        )
                     )
-                )
+
+                    // Bento Capsule Tabs Row
+                    if (tabs.size > 1) {
+                        LazyRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(theme.surface)
+                                .border(width = 0.5.dp, color = theme.textPrimary.copy(alpha = 0.08f))
+                                .padding(vertical = 8.dp, horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(tabs) { (uriStr, fileName) ->
+                                val isActive = uriStr == activeTabUri
+                                val language = SyntaxHighlighter.detectLanguage(fileName)
+                                val icon = when (language.lowercase()) {
+                                    "python", "rust", "typescript", "javascript", "kotlin", "java", "r" -> Icons.Default.Code
+                                    "json" -> Icons.Default.DataObject
+                                    "markdown", "epub" -> Icons.Default.MenuBook
+                                    else -> Icons.Default.Description
+                                }
+                                
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isActive) theme.accent.copy(alpha = 0.15f) else Color.Transparent)
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isActive) theme.accent else theme.textPrimary.copy(alpha = 0.1f),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .clickable { onSelectTab(uriStr) }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = if (isActive) theme.accent else theme.textPrimary.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = fileName,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isActive) theme.accent else theme.textPrimary.copy(alpha = 0.8f)
+                                    )
+                                    IconButton(
+                                        onClick = { onCloseTab(uriStr) },
+                                        modifier = Modifier.size(16.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Close tab",
+                                            tint = if (isActive) theme.accent.copy(alpha = 0.7f) else theme.textPrimary.copy(alpha = 0.3f),
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         containerColor = theme.background
