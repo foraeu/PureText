@@ -735,8 +735,17 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
         triggerScrollToSearchResult(activeUri, prevIdx)
     }
 
+    private fun triggerScrollToSearchResult(activeUri: String, index: Int) {
+        val session = _tabs.value[activeUri] ?: return
+        val match = session.searchResults.getOrNull(index) ?: return
+        viewModelScope.launch {
+            _scrollRequest.emit(match.lineIndex)
+        }
+    }
+
     private fun triggerScrollToSearchResult(index: Int) {
-        // Fallback for older code compatibility, does nothing as we use the activeUri version
+        val activeUri = _activeTabUri.value ?: return
+        triggerScrollToSearchResult(activeUri, index)
     }
 
     fun clearSearch() {
