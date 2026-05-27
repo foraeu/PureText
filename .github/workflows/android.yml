@@ -3,9 +3,14 @@ name: Android CI/CD
 on:
   push:
     branches: [ "main", "master" ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch: # Allows manual trigger from GitHub UI
+
+permissions:
+  contents: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -37,8 +42,23 @@ jobs:
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
+    - name: Rename APK for Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/PureText-${{ github.ref_name }}.apk
+
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: PureText-Debug-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: app/build/outputs/apk/debug/*.apk
+
+    - name: Create Release and Upload Assets
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: app/build/outputs/apk/debug/PureText-${{ github.ref_name }}.apk
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
