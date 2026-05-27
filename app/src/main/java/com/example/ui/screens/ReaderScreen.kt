@@ -203,15 +203,15 @@ fun ReaderScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     val icon = when (symbol.type) {
-                                        SymbolType.CLASS -> "🅒"
-                                        SymbolType.FUNCTION -> "🅵"
-                                        SymbolType.HEADER -> "📌"
+                                        SymbolType.CLASS -> Icons.Default.DataObject
+                                        SymbolType.FUNCTION -> Icons.Default.Code
+                                        SymbolType.HEADER -> Icons.Default.Bookmark
                                     }
-                                    Text(
-                                        text = icon,
-                                        color = theme.accent,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = theme.accent,
+                                        modifier = Modifier.size(16.dp)
                                     )
                                     Text(
                                         text = symbol.label,
