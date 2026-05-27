@@ -175,6 +175,7 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                 lines = session?.readerState?.lines ?: emptyList()
             )
         }
+        .distinctUntilChanged()
         .debounce(300L)
         .onEach { input ->
             performSearchOnInput(input)
