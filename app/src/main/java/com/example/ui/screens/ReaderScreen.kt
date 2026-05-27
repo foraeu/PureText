@@ -353,6 +353,20 @@ fun ReaderScreen(
                                     else -> Icons.Default.Description
                                 }
                                 
+                                val displayName = if (fileName.length <= 14) {
+                                    fileName
+                                } else {
+                                    val dotIndex = fileName.lastIndexOf('.')
+                                    if (dotIndex <= 0) {
+                                        fileName.take(11) + "..."
+                                    } else {
+                                        val ext = fileName.substring(dotIndex)
+                                        val base = fileName.substring(0, dotIndex)
+                                        val maxBase = (14 - ext.length - 3).coerceAtLeast(3)
+                                        base.take(maxBase) + "..." + ext
+                                    }
+                                }
+                                
                                 Row(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(12.dp))
@@ -374,7 +388,7 @@ fun ReaderScreen(
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
-                                        text = fileName,
+                                        text = displayName,
                                         fontSize = 12.sp,
                                         fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
                                         color = if (isActive) theme.accent else theme.textPrimary.copy(alpha = 0.8f)

@@ -190,46 +190,48 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            val metadata = FileUtils.getMetadata(context, uri)
-            val activeSettings = userSettings.value
-            val language = SyntaxHighlighter.detectLanguage(metadata.name)
+            try {
+                val metadata = withContext(Dispatchers.IO) {
+                    FileUtils.getMetadata(context, uri)
+                }
+                val activeSettings = userSettings.value
+                val language = SyntaxHighlighter.detectLanguage(metadata.name)
 
-            val dbFile = withContext(Dispatchers.IO) {
-                repository.getRecentFileByUri(uriStr)
-            }
+                val dbFile = withContext(Dispatchers.IO) {
+                    repository.getRecentFileByUri(uriStr)
+                }
 
-            val initialSession = TabSession(
-                uriString = uriStr,
-                fileName = metadata.name,
-                readerState = ReaderState(
+                val initialSession = TabSession(
                     uriString = uriStr,
                     fileName = metadata.name,
-                    size = metadata.size,
-                    language = language,
-                    isLoading = true,
-                    lines = emptyList(),
-                    initialScrollIndex = dbFile?.scrollIndex ?: 0,
-                    initialScrollOffset = dbFile?.scrollOffset ?: 0
+                    readerState = ReaderState(
+                        uriString = uriStr,
+                        fileName = metadata.name,
+                        size = metadata.size,
+                        language = language,
+                        isLoading = true,
+                        lines = emptyList(),
+                        initialScrollIndex = dbFile?.scrollIndex ?: 0,
+                        initialScrollOffset = dbFile?.scrollOffset ?: 0
+                    )
                 )
-            )
 
-            _tabs.update { it + (uriStr to initialSession) }
-            _activeTabUri.value = uriStr
+                _tabs.update { it + (uriStr to initialSession) }
+                _activeTabUri.value = uriStr
 
-            // Save to Room Recents
-            repository.insertRecentFile(
-                RecentFile(
-                    uriString = uriStr,
-                    name = metadata.name,
-                    size = metadata.size,
-                    lastOpened = System.currentTimeMillis(),
-                    language = language,
-                    scrollIndex = dbFile?.scrollIndex ?: 0,
-                    scrollOffset = dbFile?.scrollOffset ?: 0
+                // Save to Room Recents
+                repository.insertRecentFile(
+                    RecentFile(
+                        uriString = uriStr,
+                        name = metadata.name,
+                        size = metadata.size,
+                        lastOpened = System.currentTimeMillis(),
+                        language = language,
+                        scrollIndex = dbFile?.scrollIndex ?: 0,
+                        scrollOffset = dbFile?.scrollOffset ?: 0
+                    )
                 )
-            )
 
-            try {
                 // Try to persist the read & write permissions if it is a content URI
                 if (uri.scheme == "content") {
                     try {
@@ -343,14 +345,29 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
 
             } catch (e: Exception) {
                 _tabs.update { map ->
-                    val session = map[uriStr] ?: return@update map
-                    val updated = session.copy(
-                        readerState = session.readerState.copy(
-                            isLoading = false,
-                            error = e.localizedMessage ?: "Failed to open document"
+                    val session = map[uriStr]
+                    if (session != null) {
+                        val updated = session.copy(
+                            readerState = session.readerState.copy(
+                                isLoading = false,
+                                error = e.localizedMessage ?: "Failed to open document"
+                            )
                         )
-                    )
-                    map + (uriStr to updated)
+                        map + (uriStr to updated)
+                    } else {
+                        val errorSession = TabSession(
+                            uriString = uriStr,
+                            fileName = uri.lastPathSegment ?: "unknown",
+                            readerState = ReaderState(
+                                uriString = uriStr,
+                                fileName = uri.lastPathSegment ?: "unknown",
+                                isLoading = false,
+                                error = e.localizedMessage ?: "Failed to open document"
+                            )
+                        )
+                        _activeTabUri.value = uriStr
+                        map + (uriStr to errorSession)
+                    }
                 }
             }
         }
@@ -509,7 +526,9 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
             }
 
             if (isSuccess) {
-                val metadata = FileUtils.getMetadata(context, uri)
+                val metadata = withContext(Dispatchers.IO) {
+                    FileUtils.getMetadata(context, uri)
+                }
                 repository.insertRecentFile(
                     RecentFile(
                         uriString = activeUri,

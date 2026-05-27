@@ -19,7 +19,12 @@ object FileUtils {
         val contentResolver = context.contentResolver
         var name = "unknown"
         var size = 0L
-        val mimeType = contentResolver.getType(uri)
+        var mimeType: String? = null
+        try {
+            mimeType = contentResolver.getType(uri)
+        } catch (e: Exception) {
+            // Ignore
+        }
 
         if (uri.scheme == "content") {
             try {
