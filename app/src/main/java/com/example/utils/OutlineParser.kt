@@ -87,6 +87,24 @@ object OutlineParser {
                     }
                 }
             }
+            "r" -> {
+                val funRegex = Regex("^[\\s]*?([a-zA-Z_][\\w.]*)[\\s]*(?:<-|=)[\\s]*function[\\s]*\\(")
+                lines.forEachIndexed { idx, line ->
+                    val funMatch = funRegex.find(line)
+                    if (funMatch != null) {
+                        symbols.add(OutlineSymbol(funMatch.groupValues[1] + "()", idx, SymbolType.FUNCTION))
+                    }
+                }
+            }
+            "epub" -> {
+                val chapterRegex = Regex("^(第[0-9一二三四五六七八九十百千万]+[章节回卷]|卷[0-9一二三四五六七八九十百千万]+)\\s*(.*)$")
+                lines.forEachIndexed { idx, line ->
+                    val match = chapterRegex.find(line)
+                    if (match != null) {
+                        symbols.add(OutlineSymbol(line, idx, SymbolType.HEADER))
+                    }
+                }
+            }
             "markdown" -> {
                 val headerRegex = Regex("^(#{1,6})\\s+(.*)$")
                 lines.forEachIndexed { idx, line ->

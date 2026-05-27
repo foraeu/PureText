@@ -133,7 +133,12 @@ fun ReaderScreen(
                 // Ensurebars are visible on search selection
                 showUIBars = true
                 coroutineScope.launch {
-                    lazyListState.animateScrollToItem(targetLine)
+                    val currentIndex = lazyListState.firstVisibleItemIndex
+                    if (kotlin.math.abs(targetLine - currentIndex) < 200) {
+                        lazyListState.animateScrollToItem(targetLine)
+                    } else {
+                        lazyListState.scrollToItem(targetLine)
+                    }
                 }
             }
         }
@@ -179,7 +184,12 @@ fun ReaderScreen(
                                         .clickable {
                                             coroutineScope.launch {
                                                 drawerState.close()
-                                                lazyListState.animateScrollToItem(symbol.lineIndex)
+                                                val currentIndex = lazyListState.firstVisibleItemIndex
+                                                if (kotlin.math.abs(symbol.lineIndex - currentIndex) < 200) {
+                                                    lazyListState.animateScrollToItem(symbol.lineIndex)
+                                                } else {
+                                                    lazyListState.scrollToItem(symbol.lineIndex)
+                                                }
                                             }
                                         }
                                         .padding(8.dp),

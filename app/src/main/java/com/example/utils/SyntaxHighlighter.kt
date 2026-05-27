@@ -102,6 +102,7 @@ object SyntaxHighlighter {
             "js", "jsx" -> "javascript"
             "kt", "kts" -> "kotlin"
             "java" -> "java"
+            "r", "rmd" -> "r"
             "json" -> "json"
             "md", "markdown" -> "markdown"
             "xml", "html", "xhtml" -> "markup"
@@ -177,6 +178,13 @@ object SyntaxHighlighter {
                 "KEYWORD" to "@[a-zA-Z0-9_-]+|\\b(margin|padding|background|color|font-size|font-family|display|position|flex|width|height|border|outline|box-shadow|text-align|justify-content|align-items)\\b",
                 "NUMBER" to "\\b\\d+(?:\\.\\d+)?(?:px|em|rem|%|vh|vw|ms|s|deg)?\\b",
                 "BUILTIN" to "\\b(important|auto|none|block|inline|flex|grid|absolute|relative|fixed|static|center|left|right|solid|dashed)\\b"
+            )
+            "r" -> listOf(
+                "COMMENT" to "#.*",
+                "STRING" to stringP,
+                "KEYWORD" to "\\b(if|else|repeat|while|function|for|in|next|break|TRUE|FALSE|NULL|Inf|NaN|NA|NA_integer_|NA_real_|NA_complex_|NA_character_)\\b",
+                "NUMBER" to "\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?(?:[L])?\\b",
+                "BUILTIN" to "\\b(c|list|vector|matrix|data\\.frame|library|require|print|cat|mean|sd|sum|apply|lapply|sapply|tapply|as\\.numeric|as\\.character|as\\.factor|as\\.logical|as\\.integer|summary|plot|length|str|names|attributes|class|mode|typeof)\\b"
             )
             else -> emptyList()
         }

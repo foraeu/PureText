@@ -150,7 +150,7 @@ fun HomeScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                val langs = listOf("KT", "PY", "RS", "TS", "MD", "JSON")
+                                val langs = listOf("KT", "PY", "RS", "TS", "R", "MD", "JSON")
                                 langs.forEach { lang ->
                                     Box(
                                         modifier = Modifier
@@ -431,7 +431,7 @@ fun RecentFileItem(
             ) {
                 Icon(
                     imageVector = when (recentFile.language.lowercase()) {
-                        "python", "rust", "typescript", "javascript", "kotlin", "java" -> Icons.Default.Code
+                        "python", "rust", "typescript", "javascript", "kotlin", "java", "r" -> Icons.Default.Code
                         "json" -> Icons.Default.DataObject
                         "markdown", "epub" -> Icons.Default.MenuBook
                         else -> Icons.Default.Description
