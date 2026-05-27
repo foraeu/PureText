@@ -247,19 +247,6 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                 _tabs.update { it + (uriStr to initialSession) }
                 _activeTabUri.value = uriStr
 
-                // Save to Room Recents
-                repository.insertRecentFile(
-                    RecentFile(
-                        uriString = uriStr,
-                        name = metadata.name,
-                        size = metadata.size,
-                        lastOpened = System.currentTimeMillis(),
-                        language = language,
-                        scrollIndex = dbFile?.scrollIndex ?: 0,
-                        scrollOffset = dbFile?.scrollOffset ?: 0
-                    )
-                )
-
                 // Try to persist the read & write permissions if it is a content URI
                 if (uri.scheme == "content") {
                     try {
@@ -272,6 +259,21 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                             // Some sources might not support persistable permissions
                         }
                     }
+                }
+
+                // Save to Room Recents only if permission is persistable (or not a content URI)
+                if (isUriPersistable(uri)) {
+                    repository.insertRecentFile(
+                        RecentFile(
+                            uriString = uriStr,
+                            name = metadata.name,
+                            size = metadata.size,
+                            lastOpened = System.currentTimeMillis(),
+                            language = language,
+                            scrollIndex = dbFile?.scrollIndex ?: 0,
+                            scrollOffset = dbFile?.scrollOffset ?: 0
+                        )
+                    )
                 }
 
                 // Stream load the file in an asynchronous IO task
@@ -380,8 +382,11 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                         val updated = session.copy(
                             readerState = session.readerState.copy(
                                 isLoading = false,
+                                lines = emptyList(),
                                 error = e.localizedMessage ?: "Failed to open document"
-                            )
+                            ),
+                            editableText = "",
+                            outlineSymbols = emptyList()
                         )
                         map + (uriStr to updated)
                     } else {
@@ -424,6 +429,15 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                     true
                 } ?: false
             }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun isUriPersistable(uri: Uri): Boolean {
+        if (uri.scheme != "content") return true
+        return try {
+            context.contentResolver.persistedUriPermissions.any { it.uri == uri }
         } catch (e: Exception) {
             false
         }
@@ -585,17 +599,19 @@ class PureTextViewModel(application: Application) : AndroidViewModel(application
                 val metadata = withContext(Dispatchers.IO) {
                     FileUtils.getMetadata(context, uri)
                 }
-                repository.insertRecentFile(
-                    RecentFile(
-                        uriString = activeUri,
-                        name = metadata.name,
-                        size = metadata.size,
-                        lastOpened = System.currentTimeMillis(),
-                        language = latestSession.readerState.language,
-                        scrollIndex = 0,
-                        scrollOffset = 0
+                if (isUriPersistable(uri)) {
+                    repository.insertRecentFile(
+                        RecentFile(
+                            uriString = activeUri,
+                            name = metadata.name,
+                            size = metadata.size,
+                            lastOpened = System.currentTimeMillis(),
+                            language = latestSession.readerState.language,
+                            scrollIndex = 0,
+                            scrollOffset = 0
+                        )
                     )
-                )
+                }
 
                 val symbols = OutlineParser.parseSymbols(latestSession.readerState.lines, latestSession.readerState.language)
                 _tabs.update { map ->

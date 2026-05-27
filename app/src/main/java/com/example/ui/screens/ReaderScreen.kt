@@ -426,12 +426,17 @@ fun ReaderScreen(
                     CircularProgressIndicator(color = theme.accent)
                 }
             } else if (readerState.error != null) {
-                val isPermissionError = remember(readerState.error) {
+                val isPermissionError = remember(readerState.error, readerState.uriString) {
                     val err = readerState.error ?: ""
-                    err.contains("Permission Denial", ignoreCase = true) ||
-                    err.contains("ACTION_OPEN_DOCUMENT", ignoreCase = true) ||
-                    err.contains("SecurityException", ignoreCase = true) ||
-                    err.contains("access using", ignoreCase = true)
+                    val isContentUri = readerState.uriString?.startsWith("content://") == true
+                    err.isNotEmpty() && (
+                        isContentUri ||
+                        err.contains("Permission Denial", ignoreCase = true) ||
+                        err.contains("ACTION_OPEN_DOCUMENT", ignoreCase = true) ||
+                        err.contains("SecurityException", ignoreCase = true) ||
+                        err.contains("access using", ignoreCase = true) ||
+                        err.contains("timeout", ignoreCase = true)
+                    )
                 }
 
                 if (isPermissionError) {
